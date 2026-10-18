@@ -1,0 +1,17 @@
+[Unit]
+Description=Hatchery MCP server on loopback
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/ssd/workspace/hatchery-bridge
+Environment=HATCHERY_WORKSPACE=/ssd/workspace
+ExecStart=/ssd/workspace/hatchery-bridge/.venv/bin/python /ssd/workspace/hatchery-bridge/server.py --transport streamable-http
+Restart=always
+RestartSec=5
+UMask=0077
+KillMode=control-group
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

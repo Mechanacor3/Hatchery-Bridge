@@ -1,0 +1,21 @@
+[Unit]
+Description=Hatchery Bridge outbound MCP tunnel
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/ssd/workspace
+
+[Service]
+Type=simple
+User=molt
+WorkingDirectory=/ssd/workspace/hatchery-bridge
+Environment=HOME=/home/molt
+LoadCredential=tunnel-key:/etc/hatchery-bridge/tunnel-key
+ExecStart=/bin/bash /ssd/workspace/hatchery-bridge/service-run.sh
+Restart=on-failure
+RestartSec=5
+UMask=0077
+KillMode=control-group
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
