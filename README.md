@@ -106,7 +106,9 @@ check `doctor`, active polling, tunnel association and Tunnels Use permissions.
 
 - `status`: host, UID, load, disk space and 20 recent job summaries.
 - `run_command`: noninteractive Bash, durable job ID, caller-supplied request ID.
-- `get_job`: status and paginated combined stdout/stderr (byte offsets).
+- `get_job`: status plus paginated output or a bounded tail-from-end (`tail_bytes`).
+- `wait_job`: bounded wait (up to 30s) for terminal state plus newest output; never reruns.
+- `inspect_workspace`: read-only Git/Docker/active-job snapshot for a workspace directory.
 - `cancel_job`: stop the foreground process group; completed side effects remain.
 - `read_file`: UTF-8 workspace file plus SHA256, up to 256 KiB.
 - `write_file`: atomic replacement after SHA256 check; `missing` creates a file.

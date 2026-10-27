@@ -55,6 +55,17 @@ class BridgeTests(unittest.TestCase):
         self.assertTrue(j['truncated'])
         self.assertEqual((server.STATE/(r['job_id']+'.log')).stat().st_size,server.MAX_LOG)
 
+    def test_wait_tail_and_inspect(self):
+        r = server.run_command("printf 'first\\n'; sleep .2; printf 'last\\n'", 'wait-tail')
+        j = server.wait_job(r['job_id'], wait_seconds=3, tail_bytes=5)
+        self.assertEqual(j['status'], 'succeeded')
+        self.assertEqual(j['output'], 'last\n')
+        self.assertGreater(j['output_offset'], 0)
+        snap = server.inspect_workspace('.')
+        self.assertIn('git', snap)
+        self.assertIn('containers', snap)
+        self.assertIn('active_jobs', snap)
+
     def test_modern_discovery_and_tools(self):
         from mcp import Client, StdioServerParameters
         import json
@@ -67,7 +78,7 @@ class BridgeTests(unittest.TestCase):
                 self.assertGreaterEqual(client.protocol_version, '2026-07-28')
                 listed = await client.list_tools()
                 self.assertEqual({t.name for t in listed.tools},
-                    {'status', 'run_command', 'get_job', 'cancel_job', 'read_file', 'write_file'})
+                    {'status', 'run_command', 'get_job', 'wait_job', 'inspect_workspace', 'cancel_job', 'read_file', 'write_file'})
                 async def call(name, args):
                     result = await client.call_tool(name, args)
                     self.assertFalse(result.is_error, result)
@@ -100,7 +111,7 @@ class BridgeTests(unittest.TestCase):
                 async with ClientSession(read,write) as session:
                     await session.initialize()
                     listed = await session.list_tools()
-                    self.assertEqual(len(listed.tools),6)
+                    self.assertEqual(len(listed.tools),8)
                     r = await session.call_tool('status',{})
                     self.assertFalse(r.is_error)
                     bad = await session.call_tool('read_file',{'path':'../x'})
