@@ -37,6 +37,9 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(j['output'],'helloerror')
         self.assertEqual(j['exit_code'],0)
         self.assertEqual(server.run_command("printf 'hello'; printf 'error' >&2",'same')['job_id'],r['job_id'])
+        fast = server.run_command("printf fast", 'fast-inline')
+        if fast['status'] == 'succeeded':
+            self.assertEqual(fast['output'], 'fast')
         with self.assertRaises(server.ToolError):
             server.run_command('echo different','same')
 

@@ -105,7 +105,7 @@ check `doctor`, active polling, tunnel association and Tunnels Use permissions.
 ## Tools
 
 - `status`: host, UID, load, disk space and 20 recent job summaries.
-- `run_command`: noninteractive Bash, durable job ID, caller-supplied request ID.
+- `run_command`: noninteractive Bash, durable job ID, caller-supplied request ID; very fast completed commands may include their bounded output immediately.
 - `get_job`: status plus paginated output or a bounded tail-from-end (`tail_bytes`).
 - `wait_job`: bounded wait (up to 30s) for terminal state plus newest output; never reruns.
 - `inspect_workspace`: read-only Git/Docker/active-job snapshot for a workspace directory.

@@ -204,7 +204,18 @@ def run_command(command: str, request_id: str, cwd: str = '.', timeout_seconds: 
     except Exception:
         update(job_id, status='failed')
         raise
-    return {'job_id':job_id, 'status':'queued', 'deduplicated':False}
+    # Fast commands are common. Give the worker a tiny settle window so a command
+    # that already finished can return its bounded output without a second MCP call.
+    settle_deadline = time.monotonic()+0.15
+    while time.monotonic() < settle_deadline:
+        j = job_row(job_id)
+        if j['status'] not in ('running','queued'):
+            result = _job_output(j, tail_bytes=16384)
+            result['job_id'] = job_id
+            result['deduplicated'] = False
+            return result
+        time.sleep(.025)
+    return {'job_id':job_id, 'status':job_row(job_id)['status'], 'deduplicated':False}
 
 def _job_output(j: dict, offset: int = 0, max_bytes: int = 32768, tail_bytes: int = 0) -> dict:
     if offset < 0 or not 1 <= max_bytes <= 65536 or not 0 <= tail_bytes <= 65536:
