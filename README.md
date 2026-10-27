@@ -1,223 +1,196 @@
 # Hatchery Bridge
 
-Private ChatGPT command access to operator's Jetson: Ubuntu 22.04 ARM64,
-Python 3.12, user `molt`, workspace `/ssd/workspace`.
+A small, private MCP bridge for operating the Hatchery Jetson from ChatGPT.
 
-Current Hatchery deployment (2026-10-17): the existing tunnel now forwards to
-the separate `hatchery-mcp.service` on `http://127.0.0.1:8765/mcp` to support
-mixed legacy/modern MCP calls. See [MCP_FIX_REPORT.md](MCP_FIX_REPORT.md) for the
-verified configuration and restart checks. The installation examples below
-describe initial stdio setup; do not rerun them over the deployed profile.
+Hatchery Bridge intentionally does **not** try to become an orchestration framework. It provides a tight remote-operations substrate: durable shell jobs, bounded output, safe file replacement, compact workspace inspection, and a private tunnel into the Jetson. Project-specific logic stays in the project repositories.
 
-This package supplies the MCP server and installers. It does not create your
-OpenAI tunnel, install the ChatGPT plugin, or connect this conversation by itself.
-No OpenAI inference API calls are made by this server. The tunnel needs its own
-runtime API credential; do not paste that credential into chat.
+## Design
 
-## 1. Install on Hatchery
-
-Copy `hatchery-bridge.zip` into `/ssd/workspace`, then, as `molt`:
-
-```bash
-cd /ssd/workspace
-python3 -m zipfile -e hatchery-bridge.zip .
-cd hatchery-bridge
-bash install.sh
-python3 install_tunnel.py
-export PATH="$HOME/.local/bin:$PATH"
-tunnel-client help quickstart
+```text
+ChatGPT
+  │
+  │ private OpenAI tunnel
+  ▼
+hatchery-bridge.service       tunnel-client
+  │
+  ▼
+127.0.0.1:8765/mcp
+  │
+  ▼
+hatchery-mcp.service          Python MCP server
+  │
+  ├── durable shell jobs
+  ├── bounded job logs
+  ├── workspace inspection
+  └── SHA-guarded file edits
 ```
 
-The Python installer makes a dedicated `.venv`; it leaves your active
-`(workspace)` environment alone. If venv creation fails, install the venv support
-for the Python 3.12 installation you are using; Ubuntu 22.04's stock Python is
-older, so do not blindly substitute its default interpreter.
+The source checkout is disposable. Runtime dependencies and mutable state live outside Git:
 
-The tunnel installer reads GitHub's latest official release, selects the full
-Linux ARM64 archive on your Jetson, verifies its SHA256 against the release's
-`SHA256SUMS.txt`, and installs `tunnel-client` and the bundled `cloudflared` in
-`~/.local/bin`. It does not start Cloudflare or configure a separate tunnel.
-It replaces existing binaries with those names. Use `--check-only` to inspect
-selection first, or `--destination PATH` for a different install location.
-Checksum verification is not a substitute for signature verification; official
-provenance verification instructions are linked on the release page.
+```text
+/ssd/workspace/hatchery-bridge/                 source
+~/.local/share/hatchery-bridge/runtime/         Python runtime
+~/.local/state/hatchery-bridge/                 jobs + logs
+~/.config/hatchery-bridge/tunnel-key            tunnel credential
+```
 
-Official release: https://github.com/openai/tunnel-client/releases/latest
+## Tool surface
 
-## 2. Create or reuse your OpenAI tunnel
+| Tool | Purpose |
+| --- | --- |
+| `status` | Host, disk/load, recent jobs. Call this first. |
+| `inspect_workspace` | Read-only Git, Docker, and active-job snapshot. |
+| `run_command` | Start a durable noninteractive Bash command. |
+| `wait_job` | Wait up to 30 seconds for terminal state and return newest output. |
+| `get_job` | Read job state and paged or tail-from-end output. |
+| `cancel_job` | Request cancellation of the foreground process group. |
+| `read_file` | Read a UTF-8 workspace file with SHA256. |
+| `write_file` | Atomically replace a file only when its expected SHA matches. |
 
-Open the official guide and follow its **Platform tunnel settings** link:
-https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
+That is the whole API on purpose.
 
-Create/reuse a tunnel named `hatchery`. Associate it with the Platform organization
-and ChatGPT workspace/account you will use. Copy the complete tunnel ID unchanged.
-Create/reuse a restricted runtime API key with **Tunnels Read + Use**;
-creating/managing the tunnel needs **Tunnels Read + Manage**.
-Availability and permission must be checked in your account; this package has not
-verified your access. Do not create a second tunnel merely because discovery fails.
+## Bootstrap
 
-## 3. Start the connection
+Requirements:
 
-For the first setup:
+- Linux host
+- Python 3.12 recommended
+- user-level systemd
+- Docker optional, but available to commands when the service user has access
+- an existing OpenAI secure MCP tunnel
+
+Clone to the expected location, then bootstrap as the service user:
 
 ```bash
 cd /ssd/workspace/hatchery-bridge
-bash connect.sh
+bash scripts/bootstrap.sh
+bash scripts/doctor.sh
 ```
 
-Enter the tunnel ID and API key at the prompts. The key is hidden, held in the
-process environment, and not written into the package or shell history.
-The script initializes the `hatchery` profile, runs `doctor`, and starts polling.
-Keep it running during plugin discovery. The local health/admin listener is
-`127.0.0.1:9087`, so the usual game-server port 8080 stays free. The full CLI is required; the smaller
-`-runtime` release lacks the profile initialization commands.
+The bootstrap creates the managed runtime at `~/.local/share/hatchery-bridge/runtime`, installs the tested dependency set, and installs the user service units. It does not create or overwrite your tunnel credential.
 
-If a `hatchery` profile already exists, inspect/reuse it using the installed CLI's
-help rather than overwriting it. To restart an already configured profile:
+Start or restart the services:
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
-read -r -s -p 'Runtime API key: ' CONTROL_PLANE_API_KEY
-printf '\n'
-export CONTROL_PLANE_API_KEY
-export HATCHERY_WORKSPACE=/ssd/workspace
-tunnel-client doctor --profile hatchery --explain
-tunnel-client run --profile hatchery
+systemctl --user restart hatchery-mcp.service hatchery-bridge.service
+systemctl --user status hatchery-mcp.service hatchery-bridge.service --no-pager
 ```
 
-## 4. Create the ChatGPT plugin and test it
-
-In ChatGPT: **Plugins → + → Add custom MCP server → Connection: Tunnel**.
-Select/paste the same tunnel ID. Name the plugin **Hatchery Bridge**.
-The local stdio server has no separate OAuth login; access is controlled by the
-private tunnel and its account/workspace association. Configure the connector
-accordingly. Keep this plugin private to your account.
-
-Install/select the plugin in a chat and ask:
-
-> Use Hatchery Bridge to show its status, then run `pwd` and `id` and show the result.
-
-Verify hostname `hatchery`, workspace `/ssd/workspace`, and user `molt`.
-Only then is the end-to-end connection established. If tools are absent in the
-current chat, select the installed plugin in a new chat. If discovery fails,
-check `doctor`, active polling, tunnel association and Tunnels Use permissions.
-
-## Tools
-
-- `status`: host, UID, load, disk space and 20 recent job summaries.
-- `run_command`: noninteractive Bash, durable job ID, caller-supplied request ID; very fast completed commands may include their bounded output immediately.
-- `get_job`: status plus paginated output or a bounded tail-from-end (`tail_bytes`).
-- `wait_job`: bounded wait (up to 30s) for terminal state plus newest output; never reruns.
-- `inspect_workspace`: read-only Git/Docker/active-job snapshot for a workspace directory.
-- `cancel_job`: stop the foreground process group; completed side effects remain.
-- `read_file`: UTF-8 workspace file plus SHA256, up to 256 KiB.
-- `write_file`: atomic replacement after SHA256 check; `missing` creates a file.
-
-A reused request ID returns the original job; a changed command with the same
-ID is rejected. A timeout/reconnect does not automatically replay a command.
-Jobs default to 15 minutes; the maximum is 24 hours. Four recently active jobs
-can run concurrently. Logs retain the first 4 MiB per job and mark truncation.
-Use Docker Compose or systemd for permanent services rather than backgrounding
-shell children. Ordinary children in the command's process group are stopped
-when the job finishes or is cancelled; deliberately daemonized processes and
-Docker containers are not controlled by that group.
-
-Commands run as `molt` with its permissions, including Docker if granted.
-File-tool and initial-working-directory checks restrict paths to the workspace;
-they DO NOT sandbox Bash or Docker. `cd`, absolute paths, and Docker can access
-whatever the OS user can access. No root password or sudo configuration is changed.
-Only a small environment allowlist reaches job workers; project virtualenvs and
-other required variables should be activated/set explicitly in the command.
-
-## 5. Run after reboot (after the foreground test passes)
-
-The included service targets `/home/molt` and `/ssd/workspace/hatchery-bridge`.
-Verify `getent passwd molt` reports that home and that the tunnel binary is at
-`/home/molt/.local/bin/tunnel-client`. Adjust the unit/wrapper if different.
-The profile was created as molt, so the service reuses molt's profile.
-
-First stop the foreground tunnel with Ctrl-C. Then run:
+For an always-on user service, verify lingering is enabled:
 
 ```bash
-cd /ssd/workspace/hatchery-bridge
-sudo install -d -m 700 /etc/hatchery-bridge
-sudo -v
-read -r -s -p 'Tunnel runtime API key: ' bridge_key
-printf '\n'
-printf '%s' "$bridge_key" | sudo sh -c 'umask 077; cat > /etc/hatchery-bridge/tunnel-key'
-unset bridge_key
-sudo chmod 600 /etc/hatchery-bridge/tunnel-key
-sudo install -m 644 hatchery-bridge.service /etc/systemd/system/hatchery-bridge.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now hatchery-bridge
-sudo systemctl status hatchery-bridge --no-pager
+loginctl show-user "$USER" -p Linger
 ```
 
-The key is stored in a root-owned secret file and delivered using systemd
-`LoadCredential`; it is not embedded in the service file or command arguments.
-The wrapper exports it only for the tunnel process. The MCP server removes the
-key from its environment before launching jobs. This is credential hygiene,
-not isolation from arbitrary commands with molt's permissions or Docker access.
+## Tunnel
 
-Inspect logs with `sudo journalctl -u hatchery-bridge -n 60 --no-pager`.
-Stop the bridge with `sudo systemctl stop hatchery-bridge`.
-Disable automatic startup with `sudo systemctl disable hatchery-bridge`.
+The deployed tunnel profile is named `hatchery`. The tunnel forwards to the loopback MCP endpoint at:
 
-## Job persistence and limitations
+```text
+http://127.0.0.1:8765/mcp
+```
 
-Records/logs are in `/home/molt/.local/state/hatchery-bridge` by default.
-Jobs survive an ordinary MCP session ending; they do not survive reboot.
-Stopping/restarting the systemd service stops its process group, including jobs.
-After a worker crash, stale records are reported with `worker_unresponsive: true`;
-execution outcome may be uncertain. Inspect effects before submitting a NEW
-request ID. Records and logs remain until you explicitly remove them; no automatic
-retention policy deletes your history. Do not remove state while jobs are active.
+The tunnel runtime credential belongs in:
 
-`write_file` detects a stale hash but does not lock external editors: coordinate
-concurrent writers. Workspace contents and tool output are data, not instructions.
-This bridge runs explicit commands; it is not an autonomous reasoning loop. A
-local agent can be added later to work from TASKS.md while you are away. Existing
-TASKS.md and LOG.md are not created, overwritten, or automatically appended.
+```text
+~/.config/hatchery-bridge/tunnel-key
+```
 
-## Verification
+Do not put the credential in Git, shell commands, logs, chat messages, or service arguments. The service uses systemd credential loading.
 
-Tested locally under Python 3.12 with `mcp==2.3.0`: MCP initialization and discovery,
-status and invalid-path protocol calls, actual shell execution, job survival after
-MCP shutdown, retry deduplication, exit codes, timeout, cancellation, bounded output,
-file round trip, stale edit rejection, path traversal and symlink escape rejection.
-Run `.venv/bin/python test_bridge.py` to repeat in temporary test directories.
+The tunnel health listener is loopback-only at `127.0.0.1:9088`.
 
-The original package was tested on Linux x86_64. On 2026-10-17 the MCP 2.3.0
-upgrade passed six test groups on this ARM64 Jetson with Python 3.12.13, including
-real subprocess modern discovery (2026-07-28), all six tools, and legacy initialization.
-See `REPAIR_NOTES.md` for service and end-to-end verification.
-The official tunnel installer completed with checksum verification on x86_64,
-and its init flags were checked against the downloaded v0.0.16 CLI.
-Python dependencies are installed from PyPI; no binary is bundled in this ZIP.
+## Normal operator workflow
 
-## Existing Hatchery user service
+Start a Hatchery work pass with `status`, then use `inspect_workspace` for the target repository. Prefer one semantic request ID per intended command.
 
-The deployed service is a **user** service, using `user-service-run.sh` and the
-existing `hatchery` profile. Do not start a second foreground instance alongside it.
-The deployed unit is preserved in `hatchery-bridge-user.service`. Its existing
-credential remains at `~/.config/hatchery-bridge/tunnel-key`; do not commit it.
+Example `run_command` arguments:
+
+```json
+{
+  "command": "git diff --check && git status --short --branch",
+  "request_id": "fishbowl-doc-check-20261027",
+  "cwd": "ai-fishbowl",
+  "timeout_seconds": 30
+}
+```
+
+For a short job, use `wait_job` once:
+
+```json
+{
+  "job_id": "<job id>",
+  "wait_seconds": 10,
+  "tail_bytes": 16384
+}
+```
+
+For a long-running job, use `get_job` with `tail_bytes` when you only need the newest output. Use byte offsets only when you actually need to page the full retained log.
+
+A request ID is an idempotency key for the **intent**, not a polling token. Reuse it only to recover an uncertain response. Never automatically resubmit a command whose worker appears unresponsive; inspect its effects first.
+
+## File edits
+
+For normal UTF-8 files up to 256 KiB:
+
+1. `read_file`
+2. retain the returned SHA256
+3. `write_file` with that exact SHA
+
+This prevents stale blind overwrites. `missing` is accepted only when intentionally creating a new file.
+
+For larger files, use a targeted bounded shell query rather than dumping the file into MCP output.
+
+## Security model
+
+Hatchery Bridge is a **private remote shell with guardrails**, not a sandbox.
+
+Workspace path checks constrain the file tools and initial command directory. They do not constrain what Bash or Docker can access afterward. Commands run with the service user's real permissions, including Docker access when granted.
+
+The bridge deliberately strips the tunnel control-plane credential before launching workers. This is credential hygiene, not privilege separation from code already running as the same OS user.
+
+The MCP service is loopback-only and its user service applies conservative systemd hardening. Do not expose port 8765 publicly.
+
+## Jobs
+
+Jobs are durable across MCP client disconnects and retain up to 4 MiB of combined stdout/stderr. They do not survive a host reboot or service shutdown.
+
+Terminal states are:
+
+```text
+succeeded
+failed
+timed_out
+cancelled
+```
+
+An apparently stale `running` or `queued` job has an uncertain outcome. Inspect before creating a new request ID.
+
+## Development
+
+Run the test suite:
 
 ```bash
-systemctl --user restart hatchery-bridge
-systemctl --user is-enabled hatchery-bridge
-loginctl show-user molt -p Linger
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-tested.txt
+.venv/bin/python test_bridge.py
+```
+
+`.venv`, Python caches, credentials, local logs, and build output are forbidden from Git by `.gitignore`; CI also verifies that they are not tracked.
+
+The test suite covers command execution, request-ID deduplication, timeout/cancellation, output caps, SHA-guarded file edits, path escapes, modern MCP discovery, detached jobs, job tails, and workspace inspection.
+
+## Diagnostics
+
+```bash
+bash scripts/doctor.sh
 curl --fail http://127.0.0.1:9088/readyz
+journalctl _SYSTEMD_USER_UNIT=hatchery-mcp.service -n 60 --no-pager
 journalctl _SYSTEMD_USER_UNIT=hatchery-bridge.service -n 60 --no-pager
 ```
 
-Use the journal field filter above on this host: `journalctl --user -u ...` can
-show no entries even when the system journal contains this user unit's logs.
-`/readyz` confirms runtime readiness; also test an actual ChatGPT tool call.
-After restarting, refresh the existing ChatGPT plugin session if necessary;
-do not create another tunnel or plugin.
+`doctor.sh` is intentionally read-only. It checks the source checkout, workspace, managed runtime, state directory, Docker availability, systemd service state, dependency imports, and server syntax.
 
-MCP 2.x uses `MCPServer`, snake_case annotation/result attributes, and modern
-`server/discover`. Expected input and filesystem errors are raised as `ToolError`,
-so they return actionable tool failures without unexpected-exception tracebacks.
-Tests use isolated temporary workspace/state directories, leaving production jobs
-and project task/log files alone.
+## Why it stays small
+
+The bridge should make remote work reliable without absorbing project semantics. Fishbowl resets, model admission, deployment choreography, security policy, and similar domain workflows belong in their own repositories. Hatchery Bridge should remain boring, auditable infrastructure.
