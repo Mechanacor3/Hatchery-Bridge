@@ -1,17 +1,24 @@
 [Unit]
 Description=Hatchery MCP server on loopback
+Documentation=https://github.com/Mechanacor3/Hatchery-Bridge
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 WorkingDirectory=/ssd/workspace/hatchery-bridge
 Environment=HATCHERY_WORKSPACE=/ssd/workspace
-ExecStart=/ssd/workspace/hatchery-bridge/.venv/bin/python /ssd/workspace/hatchery-bridge/server.py --transport streamable-http
+Environment=HATCHERY_STATE=%h/.local/state/hatchery-bridge
+ExecStart=%h/.local/share/hatchery-bridge/runtime/bin/python /ssd/workspace/hatchery-bridge/server.py --transport streamable-http
 Restart=always
-RestartSec=5
+RestartSec=3
 UMask=0077
 KillMode=control-group
 TimeoutStopSec=15
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/hatchery-bridge /ssd/workspace
 
 [Install]
 WantedBy=default.target
