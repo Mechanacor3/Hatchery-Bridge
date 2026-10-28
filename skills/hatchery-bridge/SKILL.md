@@ -1,6 +1,6 @@
 ---
 name: hatchery-bridge
-description: Operate operator's Hatchery Jetson through the Hatchery Bridge MCP server. Use for remote shell work, workspace inspection, durable jobs, bounded log reads, safe file edits, and recovery/diagnostic workflows.
+description: Operate the Hatchery host through the Hatchery Bridge MCP server. Use for remote shell work, workspace inspection, durable jobs, bounded log reads, safe file edits, and recovery/diagnostic workflows.
 ---
 
 # Hatchery Bridge operator skill
@@ -61,7 +61,7 @@ After a fresh clone or runtime repair:
 
 ```bash
 cd /ssd/workspace/hatchery-bridge
-bash scripts/bootstrap.sh
+PYTHON=python3.12 bash scripts/bootstrap.sh
 bash scripts/doctor.sh
 systemctl --user restart hatchery-mcp.service hatchery-bridge.service
 ```

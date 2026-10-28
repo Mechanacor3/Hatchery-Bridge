@@ -4,11 +4,13 @@ set -euo pipefail
 ROOT="${HATCHERY_BRIDGE_ROOT:-/ssd/workspace/hatchery-bridge}"
 RUNTIME="${HATCHERY_RUNTIME:-$HOME/.local/share/hatchery-bridge/runtime}"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-PYTHON="${PYTHON:-/usr/bin/python3}"
+PYTHON="${PYTHON:-python3.12}"
 
 [[ "$EUID" -ne 0 ]] || { echo 'Run as the service user, not root.' >&2; exit 1; }
 [[ -f "$ROOT/server.py" ]] || { echo "Missing source checkout: $ROOT" >&2; exit 1; }
 [[ -f "$ROOT/requirements-tested.txt" ]] || { echo 'Missing requirements-tested.txt' >&2; exit 1; }
+
+"$PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else "Python 3.12 or newer is required")'
 
 printf 'Bootstrapping Hatchery Bridge\n'
 printf '  source:  %s\n' "$ROOT"

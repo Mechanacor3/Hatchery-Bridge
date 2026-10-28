@@ -134,7 +134,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from functools import wraps
 from mcp.types import ToolAnnotations
 mcp = FastMCP('Hatchery Bridge', instructions=(
-    'Tools act on operator\'s Hatchery Jetson as its service user. Call status first. '
+    'Tools act on the Hatchery host as its service user. Call status first. '
     'Use a unique request_id per intended command; reuse it only to recover a lost response. '
     'Use wait_job for short bounded waits; use get_job tail_bytes for live log tails. Never automatically rerun an unresponsive job. '
     'Read files before editing and pass their sha256 to write_file. '
