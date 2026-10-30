@@ -18,7 +18,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=full
 ProtectHome=read-only
-ReadWritePaths=%h/.local/state/hatchery-bridge /ssd/workspace
+ReadWritePaths=%h/.local/state/hatchery-bridge %h/.codex %h/.claude /ssd/workspace
 
 [Install]
 WantedBy=default.target

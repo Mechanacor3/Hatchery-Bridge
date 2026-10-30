@@ -43,6 +43,86 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaises(server.ToolError):
             server.run_command('echo different','same')
 
+    def test_coding_assistant_uses_configured_cli(self):
+        fake = server.ROOT/'fake-codex'
+        fake.write_text("#!/bin/sh\nprintf 'CODEX_HOME:%s\\n' \"${CODEX_HOME-unset}\"\nfor arg in \"$@\"; do printf 'ARG:%s\\n' \"$arg\"; done\nprintf 'PROMPT:'\ncat\n")
+        fake.chmod(0o755)
+        old_bin = os.environ.get('HATCHERY_CODEX_BIN')
+        old_model = os.environ.get('HATCHERY_CODEX_MODEL')
+        old_home = os.environ.get('CODEX_HOME')
+        try:
+            os.environ['HATCHERY_CODEX_BIN'] = str(fake)
+            os.environ['HATCHERY_CODEX_MODEL'] = 'configured-model'
+            os.environ['CODEX_HOME'] = str(server.ROOT/'unsupported-custom-codex-home')
+            prompt = "--help\nreview 'quotes' ; $(not-shell)"
+            r = server.coding_assistant(prompt, 'coding-route',
+                model='default', read_only=True, timeout_seconds=30)
+            j = self.wait_job(r['job_id'])
+            self.assertEqual(j['exit_code'], 0)
+            self.assertIn('CODEX_HOME:unset\n', j['output'])
+            self.assertIn('ARG:--ask-for-approval\nARG:never\n', j['output'])
+            self.assertIn('ARG:read-only\n', j['output'])
+            self.assertIn('ARG:configured-model\n', j['output'])
+            self.assertIn('ARG:exec\nARG:--color\nARG:never\nARG:-\n', j['output'])
+            self.assertTrue(j['output'].endswith('PROMPT:'+prompt))
+
+            # Exact retries recover from the durable request before mutable CLI
+            # discovery/defaults are consulted again.
+            os.environ['HATCHERY_CODEX_BIN'] = str(server.ROOT/'gone-codex')
+            retry = server.coding_assistant(prompt, 'coding-route',
+                model='default', read_only=True, timeout_seconds=30)
+            self.assertEqual(retry['job_id'], r['job_id'])
+            self.assertTrue(retry['deduplicated'])
+            with self.assertRaises(server.ToolError):
+                server.coding_assistant('different', 'coding-route',
+                    model='default', read_only=True, timeout_seconds=30)
+            with self.assertRaises(server.ToolError):
+                server.coding_assistant('x', 'bad-assistant', assistant='bogus')
+        finally:
+            if old_bin is None:
+                os.environ.pop('HATCHERY_CODEX_BIN', None)
+            else:
+                os.environ['HATCHERY_CODEX_BIN'] = old_bin
+            if old_model is None:
+                os.environ.pop('HATCHERY_CODEX_MODEL', None)
+            else:
+                os.environ['HATCHERY_CODEX_MODEL'] = old_model
+            if old_home is None:
+                os.environ.pop('CODEX_HOME', None)
+            else:
+                os.environ['CODEX_HOME'] = old_home
+
+    def test_coding_assistant_defaults_and_claude_stdin(self):
+        fake_codex = server.ROOT/'default-codex'
+        fake_codex.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\ncat\n")
+        fake_codex.chmod(0o755)
+        fake_claude = server.ROOT/'fake-claude'
+        fake_claude.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\ncat\n")
+        fake_claude.chmod(0o755)
+        saved = {name: os.environ.get(name) for name in (
+            'HATCHERY_CODEX_BIN','HATCHERY_CODEX_MODEL','HATCHERY_CLAUDE_BIN')}
+        try:
+            os.environ['HATCHERY_CODEX_BIN'] = str(fake_codex)
+            os.environ.pop('HATCHERY_CODEX_MODEL', None)
+            r = server.coding_assistant('default model', 'coding-default', timeout_seconds=30)
+            out = self.wait_job(r['job_id'])['output'].splitlines()
+            self.assertIn('gpt-5.6-sol', out)
+            self.assertEqual(out[-2:], ['-', 'default model'])
+
+            os.environ['HATCHERY_CLAUDE_BIN'] = str(fake_claude)
+            r = server.coding_assistant('--help is prompt text', 'coding-claude',
+                assistant='claude', model='sonnet', read_only=True, timeout_seconds=30)
+            out = self.wait_job(r['job_id'])['output'].splitlines()
+            self.assertEqual(out[:3], ['--print', '--permission-mode', 'plan'])
+            self.assertIn('sonnet', out)
+            self.assertEqual(out[-1], '--help is prompt text')
+        finally:
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
     def test_failure_timeout_cancel(self):
         r = server.run_command('exit 7','failure')
         self.assertEqual(self.wait_job(r['job_id'])['exit_code'],7)
@@ -81,7 +161,7 @@ class BridgeTests(unittest.TestCase):
                 self.assertGreaterEqual(client.protocol_version, '2026-07-28')
                 listed = await client.list_tools()
                 self.assertEqual({t.name for t in listed.tools},
-                    {'status', 'run_command', 'get_job', 'wait_job', 'inspect_workspace', 'cancel_job', 'read_file', 'write_file'})
+                    {'status', 'run_command', 'coding_assistant', 'get_job', 'wait_job', 'inspect_workspace', 'cancel_job', 'read_file', 'write_file'})
                 async def call(name, args):
                     result = await client.call_tool(name, args)
                     self.assertFalse(result.is_error, result)
@@ -114,7 +194,7 @@ class BridgeTests(unittest.TestCase):
                 async with ClientSession(read,write) as session:
                     await session.initialize()
                     listed = await session.list_tools()
-                    self.assertEqual(len(listed.tools),8)
+                    self.assertEqual(len(listed.tools),9)
                     r = await session.call_tool('status',{})
                     self.assertFalse(r.is_error)
                     bad = await session.call_tool('read_file',{'path':'../x'})

@@ -16,7 +16,7 @@ printf 'Bootstrapping Hatchery Bridge\n'
 printf '  source:  %s\n' "$ROOT"
 printf '  runtime: %s\n' "$RUNTIME"
 
-mkdir -p "$(dirname "$RUNTIME")" "$UNIT_DIR" "$HOME/.local/state/hatchery-bridge"
+mkdir -p "$(dirname "$RUNTIME")" "$UNIT_DIR" "$HOME/.local/state/hatchery-bridge" "$HOME/.codex" "$HOME/.claude"
 "$PYTHON" -m venv "$RUNTIME"
 "$RUNTIME/bin/python" -m pip install --disable-pip-version-check --upgrade pip
 "$RUNTIME/bin/python" -m pip install --disable-pip-version-check -r "$ROOT/requirements-tested.txt"

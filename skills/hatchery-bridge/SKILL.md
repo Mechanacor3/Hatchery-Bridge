@@ -27,6 +27,9 @@ For short jobs, call `wait_job` once:
 ```
 
 For longer jobs, use `get_job` with `tail_bytes` for recent output.
+Use `coding_assistant` instead of hand-building shell commands for Codex/Claude
+repository work; give it instructions, a workspace-relative `cwd`, and optionally
+a model/backend. Use `read_only=true` for review-only passes.
 Use `offset` and `max_bytes` when paging retained logs. Jobs survive client
 disconnects, but not host reboot or service shutdown. Use systemd or Docker
 Compose for persistent services.

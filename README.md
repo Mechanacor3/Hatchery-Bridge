@@ -42,6 +42,7 @@ Keep both listeners private. See [SECURITY.md](SECURITY.md) for the trust bounda
 | `status` | Host, disk/load, recent jobs. Call first. |
 | `inspect_workspace` | Git, running Docker containers, and active jobs. |
 | `run_command` | Start a noninteractive Bash job with a unique `request_id`. |
+| `coding_assistant` | Run Codex (default) or Claude Code against a workspace directory. |
 | `wait_job` | Wait up to 30 seconds and return newest output. |
 | `get_job` | Read job state and bounded output; use `tail_bytes` for recent logs. |
 | `cancel_job` | Request cancellation of the foreground process group. |
@@ -62,6 +63,25 @@ Example `run_command` arguments:
 Reuse a request ID only to recover an uncertain response: it returns the original
 job. Never automatically rerun an unresponsive command; inspect its effects first.
 Use `wait_job` for short jobs and `get_job` with `tail_bytes` for longer ones.
+
+`coding_assistant` is the simpler route for repository work. It defaults to Codex,
+`gpt-5.6-sol`, workspace-write sandboxing, and a 30-minute timeout. Pass
+`read_only=true` for review/evaluation. Set `assistant="claude"` to use Claude Code
+when installed; Claude uses its CLI model default unless configured. Site defaults
+can be set with `HATCHERY_CODING_ASSISTANT`, `HATCHERY_CODEX_MODEL`/
+`HATCHERY_CLAUDE_MODEL`, and executable overrides `HATCHERY_CODEX_BIN`/
+`HATCHERY_CLAUDE_BIN`; per-call values still take precedence. When no Codex
+executable override is set, the bridge also discovers the Codex binary bundled
+with the VS Code extension. Prompts are delivered over stdin rather than as CLI
+arguments so prompt text cannot be interpreted as command-line options.
+
+The detached worker deliberately does not forward API-key/token environment
+variables into coding agents, because commands launched by those agents inherit
+their environment. Authenticate the CLIs through their normal user credential
+stores. The service grants write access to the standard `~/.codex` and `~/.claude`
+state directories and intentionally does not forward alternate state-directory
+overrides. Claude `acceptEdits` is a permission mode, not a filesystem sandbox
+equivalent to Codex `workspace-write`.
 
 Jobs survive client disconnects, but not host reboot or service shutdown. Each
 retains up to 4 MiB of combined stdout/stderr. Terminal states are `succeeded`,
