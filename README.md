@@ -106,6 +106,16 @@ Readiness checks the tunnel; confirm end-to-end access with a connected `status`
 call. If only an old chat reports a protocol mismatch, reconnect the existing
 plugin in a fresh chat before restarting healthy services.
 
+After deploying tool, schema, or server-instruction changes, open ChatGPT
+Plugins on the web, select Hatchery Bridge, and click **Refresh**. Confirm the
+discovered list includes `coding_assistant`, `wait_job`, and `inspect_workspace`
+(currently nine tools), that `get_job` exposes `tail_bytes`, and then verify the
+tools in the current chat. If metadata remains stale, start a new chat with the
+plugin selected. A package version bump alone does not refresh app tool metadata.
+Incident 2026-10-31: the live server had nine tools while the chat saw six;
+explicit connection **Refresh** fixed discovery even in the existing chat. See
+the official [plugin deployment reference](https://developers.openai.com/plugins/deploy).
+
 ## Develop
 
 ```bash
